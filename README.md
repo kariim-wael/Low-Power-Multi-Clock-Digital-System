@@ -6,7 +6,7 @@
   </p>
 
   [![RTL](https://img.shields.io/badge/RTL-Verilog%20%2F%20SystemVerilog-blue.svg)](#-system-architecture)
-  [![Synthesis](https://img.shields.io/badge/Synthesis-Design_Compiler-informational.svg)](#-implementation--results)
+  [![Synthesis](https://img.shields.io/badge/Synthesis-Synopsys_Design_Compiler-informational.svg)](#-implementation--results)
   [![Technology](https://img.shields.io/badge/Technology-TSMC_130nm-success.svg)](#-implementation--results)
   [![DFT](https://img.shields.io/badge/DFT_Coverage-99.5%25-orange.svg)](#-implementation--results)
   [![Formal](https://img.shields.io/badge/Formal_Equivalence-100%25_Verified-brightgreen.svg)](#-formal-verification)
@@ -226,4 +226,4 @@ Major functional blocks (`U_FIFO`, `UART`, `U_RegFile`, `U_ALU`, `U_SYS_CTRL`, c
 6. **Full Parameterization** — `DATA_WIDTH`, register-file address width/depth, synchronizer stage counts, and FIFO depth/address width are all set via Verilog parameters, letting the entire system rescale from the top level alone.
 
 ---
-*Low-Power Configurable Multi-Clock Digital System — RTL-to-GDS Design & Verification Documentation*
+*Low-Power Configurable Multi-Clock Digital System — RTL-to-GDS Design & Verification*
