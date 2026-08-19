@@ -1,0 +1,826 @@
+
+`timescale 1ns/1ps
+
+module SYS_TOP_tb ();
+
+parameter DATA_WIDTH = 8;
+parameter RF_ADDR = 4; 
+parameter UART_CLK_PER = 271.267;   // 3.6864 MHz (115.2 * 32)  
+parameter REF_CLK_PER = 20;         // 50 MHz
+
+localparam  [DATA_WIDTH-1:0]    RF_W_CMD_tb        = 8'hAA,
+								RF_R_CMD_tb        = 8'hBB,
+								ALU_OP_CMD_tb      = 8'hCC,
+								ALU_NO_OP_CMD_tb   = 8'hDD; 
+								
+
+parameter TEST_MODE_ONE = 1;		// THE CONFIGURATION :: PARITY ENABLE = 1, PARITY TYPE EVEN.						
+parameter TEST_MODE_TWO = 2;		// THE CONFIGURATION :: PARITY ENABLE = 1, PARITY TYPE ODD.						
+parameter TEST_MODE_THREE = 3;		// THE CONFIGURATION :: PARITY ENABLE = 0.						
+
+
+reg 	RST_N;
+reg 	UART_CLK;
+reg		REF_CLK;
+reg		UART_RX_IN;
+
+wire	UART_TX_O;
+wire	parity_error;
+wire	framing_error;
+
+
+// REF Clock Generator
+always #(REF_CLK_PER/2) REF_CLK = ~REF_CLK ;
+
+// UART RX Clock Generator
+always #(UART_CLK_PER/2.0) UART_CLK = ~UART_CLK ;
+
+
+// Instantiate the Design Under Test (DUT)
+SYS_TOP # (.DATA_WIDTH(DATA_WIDTH),.RF_ADDR(RF_ADDR)) DUT (
+.UART_CLK(UART_CLK),
+.REF_CLK(REF_CLK),
+.RST_N(RST_N),
+.UART_RX_IN(UART_RX_IN),
+
+.UART_TX_O(UART_TX_O),
+.parity_error(parity_error),
+.framing_error(framing_error)
+);
+
+
+
+initial
+ begin
+
+	// Save waveform data for simulation
+	$dumpfile("FINAL_SYS.vcd") ;       
+	$dumpvars;
+	
+	$display("\n");
+
+	$display("=====================================================================================================================================================================================================================");
+	$display("                                                                                         Starting Final System Testbench        ");
+	$display("=====================================================================================================================================================================================================================\n");
+	
+
+	initialize();
+	
+
+	reset();
+	
+
+	$monitor("\n***************************************************************   UPDATE THE CONFIGURATION :: PRESCALE = %0d :: PARITY_ENABLE = %d :: PARITY_TYPE = %d   ***************************************************************\n\n",DUT.U_RegFile.UART_CONFIG[7:2],DUT.U_RegFile.UART_CONFIG[0],DUT.U_RegFile.UART_CONFIG[1]);
+
+	
+
+
+
+	//***********  DEFAULT CONFIGURATION PRESCALE = 32 , PARITY_ENABLE = 1 , PARITY_TYPE = 0 (EVEN)  ***********
+	
+
+
+
+
+	// WRITE COMMAND TESTS (ADDRESS = 4'd4 , DATA = 8'hDF)
+	APPLY_WRITE_CMD(4'd4,8'hDF,TEST_MODE_ONE);
+	APPLY_WRITE_CMD_CHECK(4'd4,8'hDF);
+
+	// WRITE COMMAND TESTS (ADDRESS = 4'd5 , DATA = 8'h0A)
+	APPLY_WRITE_CMD(4'd5,8'h0A,TEST_MODE_ONE);
+	APPLY_WRITE_CMD_CHECK(4'd5,8'h0A);
+	
+	// WRITE COMMAND TESTS (ADDRESS = 4'd6 , DATA = 8'h98)
+	APPLY_WRITE_CMD(4'd6,8'h98,TEST_MODE_ONE);
+	APPLY_WRITE_CMD_CHECK(4'd6,8'h98);
+	
+	
+
+	// READ COMMAND TESTS THE DEFUALT CONFIG REG (ADDRESS = 4'd2 , EXPECTED DATA = 8'b100000_0_1)
+	APPLY_READ_CMD(8'd2,TEST_MODE_ONE);
+	APPLY_READ_CMD_CHECK(8'd2,TEST_MODE_ONE);
+	
+	// READ COMMAND TESTS THE DEFUALT CONFIG REG (ADDRESS = 4'd3 , EXPECTED DATA = 8'b00_100000)
+	APPLY_READ_CMD(8'd3,TEST_MODE_ONE);
+	APPLY_READ_CMD_CHECK(8'd3,TEST_MODE_ONE);
+	
+	// READ COMMAND TEST (ADDRESS = 4'd4 , EXPECTED DATA = 8'hDF)
+	APPLY_READ_CMD(8'd4,TEST_MODE_ONE);
+	APPLY_READ_CMD_CHECK(8'd4,TEST_MODE_ONE);
+	
+	// READ COMMAND TEST (ADDRESS = 4'd5 , EXPECTED DATA = 8'h0A)
+	APPLY_READ_CMD(8'd5,TEST_MODE_ONE);
+	APPLY_READ_CMD_CHECK(8'd5,TEST_MODE_ONE);
+	
+	
+
+	// ALU COMMANDS TESTS (OPERAND A = 8'd100 , OPERAND B = 8'd50 , FUNC = 4'b0010 (MULTIPLICATION) , EXPECTED OUTPUT = 16'h1388)
+	APPLY_ALU_W_OP_CMD(8'd100,8'd50,4'b10,TEST_MODE_ONE);
+	APPLY_ALU_CMDS_CHECK(4'b10,16'h1388);
+	
+	// ALU COMMANDS TESTS (OPERAND A = 8'd255 , OPERAND B = 8'd255 , FUNC = 4'b0000 (ADDITION) , EXPECTED OUTPUT = 16'h01FE)
+	APPLY_ALU_W_OP_CMD(8'd255,8'd255,4'b0,TEST_MODE_ONE);
+	APPLY_ALU_CMDS_CHECK(4'b0,16'h01FE);	
+	
+	// ALU COMMANDS TESTS (OPERAND A = 8'd100 , OPERAND B = 8'd50 , FUNC = 4'b0001 (SUBTRACTION) , EXPECTED OUTPUT = 16'h0032)
+	APPLY_ALU_W_OP_CMD(8'd100,8'd50,4'b1,TEST_MODE_ONE);
+	APPLY_ALU_CMDS_CHECK(4'b1,16'h0032);	
+
+	// ALU COMMANDS TESTS (OPERAND A = 8'd100 , OPERAND B = 8'd50 , FUNC = 4'b1111 (NO OPRETION) , EXPECTED OUTPUT = 16'h0000)
+	APPLY_ALU_W_OP_CMD(8'd100,8'd50,4'b1111,TEST_MODE_ONE);
+	APPLY_ALU_CMDS_CHECK(4'b1111,16'h0000);
+
+
+
+	// ALU COMMANDS TESTS (NO OPERAND , FUNC = 4'b0011 (DIVISION) , EXPECTED OUTPUT = 16'h0032)
+	APPLY_ALU_W_NO_OP_CMD(4'b0011,TEST_MODE_ONE);
+	APPLY_ALU_CMDS_CHECK(4'b0011,16'h0002);
+
+	// ALU COMMANDS TESTS (NO OPERAND , FUNC = 4'b0100 (AND) , EXPECTED OUTPUT = 16'h0020)
+	APPLY_ALU_W_NO_OP_CMD(4'b0100,TEST_MODE_ONE);
+	APPLY_ALU_CMDS_CHECK(4'b0100,16'h0020);
+
+
+	// CHECK PARITY ERROR (THE CONFIGURATION PARITY ENABLE = 1, PARITY TYPE EVEN) SO WE WILL SEND ODD PARITY TO CAUSE THE ERROR
+	CHECK_PARITY_ERROR(8'hAA);
+
+	// CHECK FRAMING ERROR SO WE WILL SEND WRONG STOP BIT TO CAUSE THE ERROR
+	CHECK_FRAMING_ERROR(8'hAA);
+	
+	
+
+
+	
+	//***********  UPDATE CONFIGURATION PRESCALE = 32 , PARITY_ENABLE = 1 , PARITY_TYPE = 1 (ODD)  ***********
+
+	
+
+
+
+	// WRITE OPRETION WITH ADDRESS = 2 TO UPDATE THE CONFIGURATION REGISTER :: PRESCALE = 32 , PARITY_ENABLE = 1 , PARITY_TYPE = 1 (ODD)
+	APPLY_WRITE_CMD(4'd2,8'b100000_1_1,TEST_MODE_ONE);	
+	
+
+	// WRITE COMMAND TESTS (ADDRESS = 4'd7 , DATA = 8'hAE)
+	APPLY_WRITE_CMD(4'd7,8'hAE,TEST_MODE_TWO);
+	APPLY_WRITE_CMD_CHECK(4'd7,8'hAE);
+
+
+	// READ COMMAND TESTS THE UPDATED CONFIG REG (ADDRESS = 4'd2 , EXPECTED DATA = 8'b100000_1_1)
+	APPLY_READ_CMD(8'd2,TEST_MODE_TWO);
+	APPLY_READ_CMD_CHECK(8'd2,TEST_MODE_TWO);
+
+
+	// ALU COMMANDS TESTS (OPERAND A = 8'd100 , OPERAND B = 8'd50 , FUNC = 4'b0101 (OR) , EXPECTED OUTPUT = 16'h1366)
+	APPLY_ALU_W_OP_CMD(8'd100,8'd50,4'b0101,TEST_MODE_TWO);
+	APPLY_ALU_CMDS_CHECK(4'b0101,16'h0076);
+
+
+	// ALU COMMANDS TESTS (NO OPERAND , FUNC = 4'b0110 (NAND) , EXPECTED OUTPUT = 16'hFFDF)
+	APPLY_ALU_W_NO_OP_CMD(4'b0110,TEST_MODE_TWO);
+	APPLY_ALU_CMDS_CHECK(4'b0110,16'hFFDF);
+
+
+
+
+
+	//***********  UPDATE CONFIGURATION PRESCALE = 32 , PARITY_ENABLE = 0 , PARITY_TYPE = X  ***********
+
+
+
+
+	
+	// WRITE OPRETION WITH ADDRESS = 2 TO UPDATE THE CONFIGURATION REGISTER :: PRESCALE = 32 , PARITY_ENABLE = 0 , PARITY_TYPE = 1 (ODD)
+	APPLY_WRITE_CMD(4'd2,8'b100000_1_0,TEST_MODE_TWO);	
+	
+
+	// WRITE COMMAND TESTS (ADDRESS = 4'd8 , DATA = 8'h33)
+	APPLY_WRITE_CMD(4'd8,8'h33,TEST_MODE_THREE);
+	APPLY_WRITE_CMD_CHECK(4'd8,8'h33);
+
+
+	// READ COMMAND TESTS THE UPDATED CONFIG REG (ADDRESS = 4'd7 , EXPECTED DATA = 8'hAE)
+	APPLY_READ_CMD(8'd7,TEST_MODE_THREE);
+	APPLY_READ_CMD_CHECK(8'd7,TEST_MODE_THREE);
+
+
+	// ALU COMMANDS TESTS (OPERAND A = 8'd100 , OPERAND B = 8'd50 , FUNC = 4'b0111 (NOR) , EXPECTED OUTPUT = 16'hFF89)
+	APPLY_ALU_W_OP_CMD(8'd100,8'd50,4'b0111,TEST_MODE_THREE);
+	APPLY_ALU_CMDS_CHECK(4'b0111,16'hFF89);
+
+
+	// ALU COMMANDS TESTS (NO OPERAND , FUNC = 4'b1000 (XOR) , EXPECTED OUTPUT = 16'h00DF)
+	APPLY_ALU_W_NO_OP_CMD(4'b1000,TEST_MODE_THREE);
+	APPLY_ALU_CMDS_CHECK(4'b1000,16'h0056);	
+
+
+
+
+
+	//***********  UPDATE CONFIGURATION PRESCALE = 16 , PARITY_ENABLE = 1 , PARITY_TYPE = 0 (EVEN)  ***********
+
+
+
+
+	
+	// WRITE OPRETION WITH ADDRESS = 2 TO UPDATE THE CONFIGURATION REGISTER :: PRESCALE = 16 , PARITY_ENABLE = 1 , PARITY_TYPE = 0 (EVEN)
+	APPLY_WRITE_CMD(4'd2,8'b010000_0_1,TEST_MODE_THREE);	
+	
+
+	// WRITE COMMAND TESTS (ADDRESS = 4'd9 , DATA = 8'hCA)
+	APPLY_WRITE_CMD(4'd9,8'hCA,TEST_MODE_ONE);
+	APPLY_WRITE_CMD_CHECK(4'd9,8'hCA);
+
+
+	// READ COMMAND TESTS THE UPDATED CONFIG REG (ADDRESS = 4'd8 , EXPECTED DATA = 8'h33)
+	APPLY_READ_CMD(8'd8,TEST_MODE_ONE);
+	APPLY_READ_CMD_CHECK(8'd8,TEST_MODE_ONE);
+
+
+	// ALU COMMANDS TESTS (OPERAND A = 8'd100 , OPERAND B = 8'd50 , FUNC = 4'b1001 (XNOR) , EXPECTED OUTPUT = 16'hFFA9)
+	APPLY_ALU_W_OP_CMD(8'd100,8'd50,4'b1001,TEST_MODE_ONE);
+	APPLY_ALU_CMDS_CHECK(4'b1001,16'hFFA9);
+
+
+	// ALU COMMANDS TESTS (NO OPERAND , FUNC = 4'b1010 (A==B?) , EXPECTED OUTPUT = 16'h0000)
+	APPLY_ALU_W_NO_OP_CMD(4'b1010,TEST_MODE_ONE);
+	APPLY_ALU_CMDS_CHECK(4'b1010,16'h0000);	
+
+
+
+
+
+	//***********  UPDATE CONFIGURATION PRESCALE = 16 , PARITY_ENABLE = 1 , PARITY_TYPE = 1 (ODD)  ***********
+
+
+
+
+	
+	// WRITE OPRETION WITH ADDRESS = 2 TO UPDATE THE CONFIGURATION REGISTER :: PRESCALE = 16 , PARITY_ENABLE = 1 , PARITY_TYPE = 1 (ODD)
+	APPLY_WRITE_CMD(4'd2,8'b010000_1_1,TEST_MODE_ONE);	
+	
+
+	// WRITE COMMAND TESTS (ADDRESS = 4'd10 , DATA = 8'h71)
+	APPLY_WRITE_CMD(4'd10,8'h71,TEST_MODE_TWO);
+	APPLY_WRITE_CMD_CHECK(4'd10,8'h71);
+
+
+	// READ COMMAND TESTS THE UPDATED CONFIG REG (ADDRESS = 4'd9 , EXPECTED DATA = 8'hCA)
+	APPLY_READ_CMD(8'd9,TEST_MODE_TWO);
+	APPLY_READ_CMD_CHECK(8'd9,TEST_MODE_TWO);
+
+
+	// ALU COMMANDS TESTS (OPERAND A = 8'd254 , OPERAND B = 8'd250 , FUNC = 4'b1011 (A>B?) , EXPECTED OUTPUT = 16'h0002)
+	APPLY_ALU_W_OP_CMD(8'd254,8'd250,4'b1011,TEST_MODE_TWO);
+	APPLY_ALU_CMDS_CHECK(4'b1011,16'h0002);
+
+
+	// ALU COMMANDS TESTS (NO OPERAND , FUNC = 4'b1100 (A<B?) , EXPECTED OUTPUT = 16'h0000)
+	APPLY_ALU_W_NO_OP_CMD(4'b1100,TEST_MODE_TWO);
+	APPLY_ALU_CMDS_CHECK(4'b1100,16'h0000);
+
+
+
+
+
+	//***********  UPDATE CONFIGURATION PRESCALE = 16 , PARITY_ENABLE = 0 , PARITY_TYPE = X  ***********
+
+
+
+
+	
+	// WRITE OPRETION WITH ADDRESS = 2 TO UPDATE THE CONFIGURATION REGISTER :: PRESCALE = 16 , PARITY_ENABLE = 0 , PARITY_TYPE = 1 (ODD)
+	APPLY_WRITE_CMD(4'd2,8'b010000_1_0,TEST_MODE_TWO);	
+	
+
+	// WRITE COMMAND TESTS (ADDRESS = 4'd11 , DATA = 8'h52)
+	APPLY_WRITE_CMD(4'd11,8'h52,TEST_MODE_THREE);
+	APPLY_WRITE_CMD_CHECK(4'd11,8'h52);
+
+
+	// READ COMMAND TESTS THE UPDATED CONFIG REG (ADDRESS = 4'd10 , EXPECTED DATA = 8'h71)
+	APPLY_READ_CMD(8'd10,TEST_MODE_THREE);
+	APPLY_READ_CMD_CHECK(8'd10,TEST_MODE_THREE);
+
+
+	// ALU COMMANDS TESTS (OPERAND A = 8'd189 , OPERAND B = 8'd215 , FUNC = 4'b1100 (A<B?) , EXPECTED OUTPUT = 16'h0003)
+	APPLY_ALU_W_OP_CMD(8'd198,8'd215,4'b1100,TEST_MODE_THREE);
+	APPLY_ALU_CMDS_CHECK(4'b1100,16'h0003);
+
+
+	// ALU COMMANDS TESTS (NO OPERAND , FUNC = 4'b1101 (A >> 1) , EXPECTED OUTPUT = 16'h0063)
+	APPLY_ALU_W_NO_OP_CMD(4'b1101,TEST_MODE_THREE);
+	APPLY_ALU_CMDS_CHECK(4'b1101,16'h0063);
+
+
+
+
+
+	//***********  UPDATE CONFIGURATION PRESCALE = 8 , PARITY_ENABLE = 1 , PARITY_TYPE = 0 (EVEN)  ***********
+
+
+
+
+	
+	// WRITE OPRETION WITH ADDRESS = 2 TO UPDATE THE CONFIGURATION REGISTER :: PRESCALE = 8 , PARITY_ENABLE = 1 , PARITY_TYPE = 0 (EVEN)
+	APPLY_WRITE_CMD(4'd2,8'b001000_0_1,TEST_MODE_THREE);	
+	
+
+	// WRITE COMMAND TESTS (ADDRESS = 4'd12 , DATA = 8'h55)
+	APPLY_WRITE_CMD(4'd12,8'h55,TEST_MODE_ONE);
+	APPLY_WRITE_CMD_CHECK(4'd12,8'h55);
+
+
+	// READ COMMAND TESTS THE UPDATED CONFIG REG (ADDRESS = 4'd11 , EXPECTED DATA = 8'h52)
+	APPLY_READ_CMD(8'd11,TEST_MODE_ONE);
+	APPLY_READ_CMD_CHECK(8'd11,TEST_MODE_ONE);
+
+
+	// ALU COMMANDS TESTS (OPERAND A = 8'd198 , OPERAND B = 8'd0 , FUNC = 4'b0011 (DIVISION) , EXPECTED OUTPUT = 16'h0000)
+	APPLY_ALU_W_OP_CMD(8'd198,8'd0,4'b0011,TEST_MODE_ONE);  // DIVISION BY ZERO CASE
+	APPLY_ALU_CMDS_CHECK(4'b0011,16'h0000);
+
+
+	// ALU COMMANDS TESTS (NO OPERAND , FUNC = 4'1110 (A << 1) , EXPECTED OUTPUT = 16'h018C)
+	APPLY_ALU_W_NO_OP_CMD(4'b1110,TEST_MODE_ONE);
+	APPLY_ALU_CMDS_CHECK(4'b1110,16'h018C);	
+
+
+
+
+
+	//***********  UPDATE CONFIGURATION PRESCALE = 8 , PARITY_ENABLE = 1 , PARITY_TYPE = 1 (ODD)  ***********
+
+
+
+
+	
+	// WRITE OPRETION WITH ADDRESS = 2 TO UPDATE THE CONFIGURATION REGISTER :: PRESCALE = 8 , PARITY_ENABLE = 1 , PARITY_TYPE = 1 (ODD)
+	APPLY_WRITE_CMD(4'd2,8'b001000_1_1,TEST_MODE_ONE);	
+	
+
+	// WRITE COMMAND TESTS (ADDRESS = 4'd13 , DATA = 8'hFE)
+	APPLY_WRITE_CMD(4'd13,8'hFE,TEST_MODE_TWO);
+	APPLY_WRITE_CMD_CHECK(4'd13,8'hFE);
+
+
+	// READ COMMAND TESTS THE UPDATED CONFIG REG (ADDRESS = 4'd12 , EXPECTED DATA = 8'h55)
+	APPLY_READ_CMD(8'd12,TEST_MODE_TWO);
+	APPLY_READ_CMD_CHECK(8'd12,TEST_MODE_TWO);
+
+
+	// ALU COMMANDS TESTS (OPERAND A = 8'd254 , OPERAND B = 8'd250 , FUNC = 4'b0010 (MULTIPLICATION) , EXPECTED OUTPUT = 16'hF80C)
+	APPLY_ALU_W_OP_CMD(8'd254,8'd250,4'b0010,TEST_MODE_TWO);
+	APPLY_ALU_CMDS_CHECK(4'b0010,16'hF80C);
+
+
+	// ALU COMMANDS TESTS (NO OPERAND , FUNC = 4'b0001 (SUBTRACTION) , EXPECTED OUTPUT = 16'h0004)
+	APPLY_ALU_W_NO_OP_CMD(4'b0001,TEST_MODE_TWO);
+	APPLY_ALU_CMDS_CHECK(4'b0001,16'h0004);
+
+
+
+
+
+	//***********  UPDATE CONFIGURATION PRESCALE = 8 , PARITY_ENABLE = 0 , PARITY_TYPE = X  ***********
+
+
+
+
+	
+	// WRITE OPRETION WITH ADDRESS = 2 TO UPDATE THE CONFIGURATION REGISTER :: PRESCALE = 8 , PARITY_ENABLE = 0 , PARITY_TYPE = 1 (ODD)
+	APPLY_WRITE_CMD(4'd2,8'b001000_1_0,TEST_MODE_TWO);	
+	
+
+	// WRITE COMMAND TESTS (ADDRESS = 4'd14 , DATA = 8'hDB)
+	APPLY_WRITE_CMD(4'd14,8'hDB,TEST_MODE_THREE);
+	APPLY_WRITE_CMD_CHECK(4'd14,8'hDB);
+
+
+	// READ COMMAND TESTS THE UPDATED CONFIG REG (ADDRESS = 4'd13 , EXPECTED DATA = 8'hFE)
+	APPLY_READ_CMD(8'd13,TEST_MODE_THREE);
+	APPLY_READ_CMD_CHECK(8'd13,TEST_MODE_THREE);
+
+
+	// ALU COMMANDS TESTS (OPERAND A = 8'd189 , OPERAND B = 8'd215 , FUNC = 4'b0010 (MULTIPLICATION) , EXPECTED OUTPUT = 16'hA64A)
+	APPLY_ALU_W_OP_CMD(8'd198,8'd215,4'b0010,TEST_MODE_THREE);
+	APPLY_ALU_CMDS_CHECK(4'b0010,16'hA64A);
+
+
+	// ALU COMMANDS TESTS (NO OPERAND , FUNC = 4'b0 (ADDITION) , EXPECTED OUTPUT = 16'h019D)
+	APPLY_ALU_W_NO_OP_CMD(4'b0,TEST_MODE_THREE);
+	APPLY_ALU_CMDS_CHECK(4'b0,16'h019D);
+
+
+
+
+
+	// FAINALY I TEST THE SYSTEM WITH IT ALL POSIBLE CONFIGURATION AND OPRETIONS TO ENSURE IT WORKS FINE WITH ALL CASES   :)
+
+	
+	#(50000*9);
+	$stop ;
+
+end
+
+
+// initialize all signals task
+task initialize;
+begin
+	UART_CLK = 1'b0;
+	REF_CLK = 1'b0;
+	RST_N = 1'b1;  
+	UART_RX_IN = 1'b1;
+end
+endtask
+
+
+// reset task
+task reset;
+begin
+	#(REF_CLK_PER)
+	RST_N  = 'b0;  
+	#(REF_CLK_PER)
+	RST_N  = 'b1;
+	#(UART_CLK_PER);
+end
+endtask
+
+
+// send frame task with default configuration (PARITY TYPE EVEN)
+task SEND_FRAME_DEFAULT_CONFIG;
+	input  [DATA_WIDTH-1:0] DATA_FRAME;
+	integer I;
+begin	
+	// The default UART configurations parity enable = 1, even parity type
+	// So the full frame will be 	{ STOP_BIT  -  EVEN_PARITY_OF_DATA_FRAME  -  DATA[8 BIT]  -  START_BIT }
+	
+	// Drive RX input on TX_CLK rising edge to keep it aligned with transmitter timing from external UART and ensure RX captures correct data
+	@(posedge DUT.UART.TX_CLK)  
+	UART_RX_IN <= 1'b0 ;	// START BIT             
+
+	for(I = 0; I < DATA_WIDTH; I = I + 1)	// DATA BYTE
+		begin
+		@(posedge DUT.UART.TX_CLK) 		
+		UART_RX_IN <= DATA_FRAME[I];   
+		end 
+		
+	@(posedge DUT.UART.TX_CLK)	// EVEN PARITY BIT, IF THE CONFIG CHANGE TO ODD PARITY WE WILL CHANGE (^) TO (~^)
+	UART_RX_IN <= ^DATA_FRAME;
+	
+	@(posedge DUT.UART.TX_CLK) 	// STOP BIT
+	UART_RX_IN <= 1'b1;	
+end
+endtask
+
+
+// send frame task with new configuration (PARITY TYPE ODD)
+task SEND_FRAME_NEW_CONFIG;
+	input  [DATA_WIDTH-1:0] DATA_FRAME;
+	integer I;
+begin	
+	// The default UART configurations parity enable = 1, odd parity type
+	// So the full frame will be 	{ STOP_BIT  -  ODD_PARITY_OF_DATA_FRAME  -  DATA[8 BIT]  -  START_BIT }
+	
+	// Drive RX input on TX_CLK rising edge to keep it aligned with transmitter timing from external UART and ensure RX captures correct data
+	@(posedge DUT.UART.TX_CLK)  
+	UART_RX_IN <= 1'b0 ;	// START BIT             
+
+	for(I = 0; I < DATA_WIDTH; I = I + 1)	// DATA BYTE
+		begin
+		@(posedge DUT.UART.TX_CLK) 		
+		UART_RX_IN <= DATA_FRAME[I];   
+		end 
+		
+	@(posedge DUT.UART.TX_CLK)	// ODD PARITY BIT
+	UART_RX_IN <= ~^DATA_FRAME;
+	
+	@(posedge DUT.UART.TX_CLK) 	// STOP BIT
+	UART_RX_IN <= 1'b1;	
+end
+endtask
+
+
+// send frame task with new configuration (PARITY DISABLE)
+task SEND_FRAME_NEW_CONFIG_TWO;
+	input  [DATA_WIDTH-1:0] DATA_FRAME;
+	integer I;
+begin	
+	// The default UART configurations parity enable = 0
+	// So the full frame will be 	{ STOP_BIT  -  DATA[8 BIT]  -  START_BIT }
+	
+	// Drive RX input on TX_CLK rising edge to keep it aligned with transmitter timing from external UART and ensure RX captures correct data
+	@(posedge DUT.UART.TX_CLK)  
+	UART_RX_IN <= 1'b0 ;	// START BIT             
+
+	for(I = 0; I < DATA_WIDTH; I = I + 1)	// DATA BYTE
+		begin
+		@(posedge DUT.UART.TX_CLK) 		
+		UART_RX_IN <= DATA_FRAME[I];   
+		end 
+	
+	@(posedge DUT.UART.TX_CLK) 	// STOP BIT
+	UART_RX_IN <= 1'b1;	
+end
+endtask
+
+
+// write command task
+task APPLY_WRITE_CMD;
+	input  [RF_ADDR-1:0] ADDRESS;
+	input  [DATA_WIDTH-1:0] DATA_BYTE;
+	input  [2:0] TEST_MODE;
+begin
+ 
+	if (TEST_MODE == 1)
+	begin
+		SEND_FRAME_DEFAULT_CONFIG(RF_W_CMD_tb);   
+		SEND_FRAME_DEFAULT_CONFIG(ADDRESS);
+		SEND_FRAME_DEFAULT_CONFIG(DATA_BYTE);
+	end 
+	else if (TEST_MODE == 2)
+	begin
+		SEND_FRAME_NEW_CONFIG(RF_W_CMD_tb);   
+		SEND_FRAME_NEW_CONFIG(ADDRESS);   
+		SEND_FRAME_NEW_CONFIG(DATA_BYTE);		
+	end
+	else if (TEST_MODE == 3)
+	begin
+		SEND_FRAME_NEW_CONFIG_TWO(RF_W_CMD_tb);   
+		SEND_FRAME_NEW_CONFIG_TWO(ADDRESS);   
+		SEND_FRAME_NEW_CONFIG_TWO(DATA_BYTE);	
+	end
+	
+end
+endtask
+
+
+// write command check task
+task APPLY_WRITE_CMD_CHECK;
+	input  [RF_ADDR-1:0] ADDRESS;
+	input  [DATA_WIDTH-1:0] DATA_BYTE;	
+begin
+
+	// WAIT THE WRITE ENABLE TO BE HIGH FROM CONTROL UNIT
+	@(posedge DUT.U_RegFile.WrEn);	
+	
+	@(posedge REF_CLK);		// THE DATA WILL BE STORE HERE IN THIS +ve EDGE 
+	@(posedge REF_CLK);		// WE WILL CHECK HERE IN THE NEXT CLK TO ENSURE THE DATA WILL BE STORED
+
+	if ( DUT.U_RegFile.regArr[ADDRESS]  == DATA_BYTE)
+		$display ("NICE: WRITE INTO REGISTER FILE OPRETION CHECK IS SUCCEEDED :: THE REG WITH ADDRESS = %0d ,THE EXPECTED DATA = %0h && THE ACTUAL DATA = %0h WITH CONFIG PRESCALE = %0d PARITY_ENABLE = %d PARITY_TYPE = %d \n" ,ADDRESS,DATA_BYTE,DUT.U_RegFile.regArr[ADDRESS],DUT.U_RegFile.UART_CONFIG[7:2],DUT.U_RegFile.UART_CONFIG[0],DUT.U_RegFile.UART_CONFIG[1]);
+	else
+		$display ("OPPS: WRITE INTO REGISTER FILE OPRETION CHECK IS FALID : THE REG WITH ADDRESS = %0d ,THE EXPECTED DATA = %0h && THE ACTUAL DATA = %0h WITH CONFIG PRESCALE = %0d PARITY_ENABLE = %d PARITY_TYPE = %d " ,ADDRESS,DATA_BYTE,DUT.U_RegFile.regArr[ADDRESS],DUT.U_RegFile.UART_CONFIG[7:2],DUT.U_RegFile.UART_CONFIG[0],DUT.U_RegFile.UART_CONFIG[1]);
+	
+end
+endtask
+
+
+// read command task
+task APPLY_READ_CMD ;
+	input  [DATA_WIDTH-1:0]  ADDR;
+	input  [2:0]  TEST_MODE;
+begin
+		
+	if (TEST_MODE == 1)
+	begin
+		SEND_FRAME_DEFAULT_CONFIG(RF_R_CMD_tb);  
+		SEND_FRAME_DEFAULT_CONFIG(ADDR);  
+	end 
+	else if (TEST_MODE == 2)
+	begin
+		SEND_FRAME_NEW_CONFIG(RF_R_CMD_tb);  
+		SEND_FRAME_NEW_CONFIG(ADDR);   		
+	end
+	else if (TEST_MODE == 3)
+	begin
+		SEND_FRAME_NEW_CONFIG_TWO(RF_R_CMD_tb);  
+		SEND_FRAME_NEW_CONFIG_TWO(ADDR);  
+	end
+
+end
+endtask 
+
+	
+// read command check task
+task APPLY_READ_CMD_CHECK;
+	input  [DATA_WIDTH-1:0]  ADDRESS;
+	input  [2:0] TEST_MODE;
+	
+	reg  [10:0] THE_FRAME_COMES_OUT_FROM_TX; 
+	reg  [10:0] THE_EXPECTED_FRAME; 
+	reg EVEN_PARITY_BIT , ODD_PARITY_BIT;
+	
+	integer I;	
+begin
+	
+	// Wait Until the output of TX will equal to zero or the BUSY signal will equal to one both will be together 
+	@(negedge UART_TX_O);
+	
+	// LOAD THE FRAME FROM TX OUTPUT 
+	for(I = 0; I < 11; I = I + 1)
+	begin
+		@(negedge DUT.UART.TX_CLK);
+		THE_FRAME_COMES_OUT_FROM_TX [I] = UART_TX_O;
+	end
+	
+	// THE PARITY BIT OF THE ACTUAL FRAME
+	EVEN_PARITY_BIT = ^DUT.U_RegFile.regArr[ADDRESS];
+	ODD_PARITY_BIT = ~^DUT.U_RegFile.regArr[ADDRESS];
+	
+	if(TEST_MODE == 1)
+		THE_EXPECTED_FRAME = {1'b1,EVEN_PARITY_BIT,DUT.U_RegFile.regArr[ADDRESS],1'b0};		// THE FRAME { STOP_BIT  -  EVEN_PARITY_OF_FRAME  -  DATA[8 BIT]  -  START_BIT }
+	else if (TEST_MODE == 2)
+		THE_EXPECTED_FRAME = {1'b1,ODD_PARITY_BIT,DUT.U_RegFile.regArr[ADDRESS],1'b0};		// THE FRAME { STOP_BIT  -  ODD_PARITY_OF_FRAME  -  DATA[8 BIT]  -  START_BIT }
+	else if (TEST_MODE == 3)
+		THE_EXPECTED_FRAME = {1'b1,1'b1,DUT.U_RegFile.regArr[ADDRESS],1'b0};				// THE FRAME { STOP_BIT  -  DATA[8 BIT]  -  START_BIT }
+	
+		if ( THE_FRAME_COMES_OUT_FROM_TX  == THE_EXPECTED_FRAME)
+		$display ("NICE: READ FROM REGISTER FILE OPRETION CHECK IS SUCCEEDED :: THE DATA IN REG WITH ADDRESS = %0d WILL BE TRANSITTER BY TX ,SO THE EXPECTED FRAME = %b && THE ACTUAL FRAME COMES OUT FROM TX = %b WITH CONFIG PRESCALE = %0d PARITY_ENABLE = %d PARITY_TYPE = %d \n" ,ADDRESS,THE_EXPECTED_FRAME,THE_FRAME_COMES_OUT_FROM_TX,DUT.U_RegFile.UART_CONFIG[7:2],DUT.U_RegFile.UART_CONFIG[0],DUT.U_RegFile.UART_CONFIG[1]);
+	else
+		$display ("OPPS: READ FROM REGISTER FILE OPRETION CHECK IS FALID :: THE DATA IN REG WITH ADDRESS = %0d WILL BE TRANSITTER BY TX ,SO THE EXPECTED FRAME = %b && THE ACTUAL FRAME COMES OUT FROM TX = %b WITH CONFIG PRESCALE=%0d PARITY_ENABLE=%d PARITY_TYPE=%d " ,ADDRESS,THE_EXPECTED_FRAME,THE_FRAME_COMES_OUT_FROM_TX,DUT.U_RegFile.UART_CONFIG[7:2],DUT.U_RegFile.UART_CONFIG[0],DUT.U_RegFile.UART_CONFIG[1]);
+	
+end
+endtask
+
+
+// ALU command with operand task
+task APPLY_ALU_W_OP_CMD ;
+	input [DATA_WIDTH-1:0]  OP_A ;
+	input [DATA_WIDTH-1:0]  OP_B ;
+	input [3:0]  FUNC ;
+	input [2:0] TEST_MODE;
+begin
+	
+	if (TEST_MODE == 1)
+	begin
+		SEND_FRAME_DEFAULT_CONFIG(ALU_OP_CMD_tb);	  
+		SEND_FRAME_DEFAULT_CONFIG(OP_A);    
+		SEND_FRAME_DEFAULT_CONFIG(OP_B);   
+		SEND_FRAME_DEFAULT_CONFIG(FUNC);  
+	end 
+	else if (TEST_MODE == 2)
+	begin
+		SEND_FRAME_NEW_CONFIG(ALU_OP_CMD_tb);	  
+		SEND_FRAME_NEW_CONFIG(OP_A);    
+		SEND_FRAME_NEW_CONFIG(OP_B);   
+		SEND_FRAME_NEW_CONFIG(FUNC);   		
+	end
+	else if (TEST_MODE == 3)
+	begin
+		SEND_FRAME_NEW_CONFIG_TWO(ALU_OP_CMD_tb);	  
+		SEND_FRAME_NEW_CONFIG_TWO(OP_A);    
+		SEND_FRAME_NEW_CONFIG_TWO(OP_B);   
+		SEND_FRAME_NEW_CONFIG_TWO(FUNC); 
+	end
+	   
+end
+endtask 
+
+
+// ALU command without operand
+task APPLY_ALU_W_NO_OP_CMD ;
+	input [3:0]  FUNC ;
+	input [2:0] TEST_MODE;
+begin
+	
+	if (TEST_MODE == 1)
+	begin
+		SEND_FRAME_DEFAULT_CONFIG(ALU_NO_OP_CMD_tb);	    
+		SEND_FRAME_DEFAULT_CONFIG(FUNC);  
+	end 
+	else if (TEST_MODE == 2)
+	begin
+		SEND_FRAME_NEW_CONFIG(ALU_NO_OP_CMD_tb);	    
+		SEND_FRAME_NEW_CONFIG(FUNC);   		
+	end
+	else if (TEST_MODE == 3)
+	begin
+		SEND_FRAME_NEW_CONFIG_TWO(ALU_NO_OP_CMD_tb);	     
+		SEND_FRAME_NEW_CONFIG_TWO(FUNC); 
+	end
+	   
+end
+endtask
+
+
+// ALU commands check task
+task APPLY_ALU_CMDS_CHECK;
+	input [3:0]  FUNC;
+	input [15:0] EXPECTED_OUT;
+	
+	reg [10:0] LEAST_BYTE_OF_ALU_COMES_OUT_FROM_TX;
+	reg [10:0] MOST_BYTE_OF_ALU_COMES_OUT_FROM_TX;
+	
+	integer I;
+begin
+	// RECEIVED THE FIRST FRAME (LEAST 8 BIT)
+	
+	// Wait Until the output of TX will equal to zero or the BUSY signal will equal to one both will be together 
+	@(negedge UART_TX_O);
+	
+	// LOAD THE FRAME FROM TX OUTPUT 
+	for(I = 0; I < 11; I = I + 1)
+	begin
+		@(negedge DUT.UART.TX_CLK);
+		LEAST_BYTE_OF_ALU_COMES_OUT_FROM_TX [I] = UART_TX_O;
+	end
+	
+	
+	// RECEIVED THE 2'nd FRAME (MOST 8 BIT)
+	
+	// Wait Until the output of TX will equal to zero or the BUSY signal will equal to one both will be together 
+	@(negedge UART_TX_O);
+	
+	// LOAD THE FRAME FROM TX OUTPUT 
+	for(I = 0; I < 11; I = I + 1)
+	begin
+		@(negedge DUT.UART.TX_CLK);
+		MOST_BYTE_OF_ALU_COMES_OUT_FROM_TX [I] = UART_TX_O;
+	end
+	
+	/* ALU Operations[ALU_FUNC]:
+	Arithmetic: 0000 = A + B   0001 = A - B   0010 = A * B   0011 = A / B
+	Logic:      0100 = A & B   0101 = A | B   0110 = ~(A&B)  0111 = ~(A|B)
+                1000 = A ^ B   1001 = ~(A^B)
+	Compare:    1010 = (A==B?1:0)  1011 = (A>B?2:0)  1100 = (A<B?3:0)
+	Shift:      1101 = A >> 1   1110 = A << 1
+	nop:		1111 = the output will be 16'h0000 in two frames
+  */
+	
+	if ( {MOST_BYTE_OF_ALU_COMES_OUT_FROM_TX[8:1],LEAST_BYTE_OF_ALU_COMES_OUT_FROM_TX[8:1]} == EXPECTED_OUT )
+		$display("NICE: ALU OPRETION CHECK IS SUCCEEDED :: OP_A = %0h ,OP_B = %0h ,ALU FUN = %b AND THEN THE OUTPUT COMES OUT FROM TX IN TWO SEQUENCE FRAMES = %h WITH CONFIG PRESCALE = %0d PARITY_ENABLE = %d PARITY_TYPE = %d \n",DUT.U_RegFile.regArr[0],DUT.U_RegFile.regArr[1],FUNC,{MOST_BYTE_OF_ALU_COMES_OUT_FROM_TX[8:1],LEAST_BYTE_OF_ALU_COMES_OUT_FROM_TX[8:1]},DUT.U_RegFile.UART_CONFIG[7:2],DUT.U_RegFile.UART_CONFIG[0],DUT.U_RegFile.UART_CONFIG[1]);
+	else
+		$display("OPPS: ALU OPRETION CHECK IS FALID :: OP_A = %0h ,OP_B = %0h ,ALU FUN = %b AND THEN THE OUTPUT COMES OUT FROM TX IN TWO SEQUENCE FRAMES = %h WITH CONFIG PRESCALE=%0d PARITY_ENABLE=%d PARITY_TYPE=%d \n",DUT.U_RegFile.regArr[0],DUT.U_RegFile.regArr[1],FUNC,{MOST_BYTE_OF_ALU_COMES_OUT_FROM_TX[8:1],LEAST_BYTE_OF_ALU_COMES_OUT_FROM_TX[8:1]},DUT.U_RegFile.UART_CONFIG[7:2],DUT.U_RegFile.UART_CONFIG[0],DUT.U_RegFile.UART_CONFIG[1]);
+		
+end
+endtask 
+
+
+// CHECK PARITY ERROR (THE CONFIGURATION PARITY ENABLE = 1, PARITY TYPE EVEN) SO WE WILL SEND ODD PARITY TO CAUSE THE ERROR
+task CHECK_PARITY_ERROR;
+	input  [DATA_WIDTH-1:0] DATA_FRAME;
+	integer I;
+begin
+	// Drive RX input on TX_CLK rising edge to keep it aligned with transmitter timing from external UART and ensure RX captures correct data
+	@(posedge DUT.UART.TX_CLK)  
+	UART_RX_IN <= 1'b0 ;	// START BIT             
+
+	for(I = 0; I < DATA_WIDTH; I = I + 1)	// DATA BYTE
+		begin
+		@(posedge DUT.UART.TX_CLK) 		
+		UART_RX_IN <= DATA_FRAME[I];   
+		end 
+		
+	@(posedge DUT.UART.TX_CLK)	// ODD PARITY BIT (WE WILL SEND ODD PARITY TO CAUSE THE ERROR SINCE THE CONFIGURATION PARITY TYPE IS EVEN) 
+	UART_RX_IN <= ~^DATA_FRAME;
+	
+	@(posedge DUT.UART.TX_CLK) 	// STOP BIT
+	UART_RX_IN <= 1'b1;	
+	
+	if (parity_error)
+		$display ("NICE: CHECK PARITY ERROR SUCCEEDED WITH parity_error = %0d \n",parity_error);
+	else
+		$display ("OPPS: CHECK PARITY ERROR FALID WITH parity_error = %0d ",parity_error);
+	
+end
+endtask
+
+
+// CHECK FRAMING ERROR SO WE WILL SEND WRONG STOP BIT TO CAUSE THE ERROR
+task CHECK_FRAMING_ERROR;
+	input  [DATA_WIDTH-1:0] DATA_FRAME;
+	integer I;
+
+begin
+	// Drive RX input on TX_CLK rising edge to keep it aligned with transmitter timing from external UART and ensure RX captures correct data
+	@(posedge DUT.UART.TX_CLK)  
+	UART_RX_IN <= 1'b0 ;	// START BIT             
+
+	for(I = 0; I < DATA_WIDTH; I = I + 1)	// DATA BYTE
+		begin
+		@(posedge DUT.UART.TX_CLK) 		
+		UART_RX_IN <= DATA_FRAME[I];   
+		end 
+		
+	@(posedge DUT.UART.TX_CLK)	// EVEN PARITY BIT 
+	UART_RX_IN <= ^DATA_FRAME;
+	
+	@(posedge DUT.UART.TX_CLK) 	// STOP BIT ---> HERE WE WILL CAUSE THE FRAMING ERROR BY SENDING 0 INSTEAD OF 1
+	UART_RX_IN <= 1'b0;	
+	
+
+	
+	@(posedge DUT.UART.TX_CLK) 	// BACK TO IDLE STATE THAT RX_IN WILL BE 1
+	UART_RX_IN <= 1'b1;	
+	
+	// CHECK HERE BEC THE FRAMING ERROR COMES HIGH AT THE END OF THE FRAME
+	if (framing_error)
+		$display ("NICE: CHECK FRAMING ERROR SUCCEEDED WITH framing_error = %0d \n",framing_error);
+	else
+		$display ("OPPS: CHECK FRAMING ERROR FALID WITH framing_error = %0d  \n",framing_error);
+end
+endtask
+ 
+
+endmodule
