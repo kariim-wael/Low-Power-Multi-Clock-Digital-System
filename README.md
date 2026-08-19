@@ -63,12 +63,11 @@ A host needs a lightweight way to remotely read and write internal state and tri
 
 
 <div align="center">
-  <img src="Screenshot 2025-10-15 153906.png" width="750" alt="System Architecture Diagram"/>
+  <img src="system_architecture.png" width="750" alt="System Architecture Diagram"/>
   <p><strong>Top-Level Block Diagram (`SYS_TOP`) & Clock Domain Partitioning</strong></p>
 </div>
 <br />
 
-The design is composed of the following sub-blocks, structurally wired together by the top-level module (`SYS_TOP`).
 
 The design is composed of the following sub-blocks, structurally wired together by the top-level module (`SYS_TOP`).
 
